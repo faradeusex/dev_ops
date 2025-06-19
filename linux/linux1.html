@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Настройка IPSet Whitelist + IPTables</title>
+  <style>
+    body {
+      font-family: monospace;
+      background: #f0f0f0;
+      padding: 2em;
+      color: #222;
+    }
+    h1, h2 {
+      color: #333;
+    }
+    code, pre {
+      background: #e8e8e8;
+      padding: 1em;
+      display: block;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border-left: 4px solid #888;
+      margin-bottom: 1.5em;
+    }
+    .note {
+      background: #fff3cd;
+      padding: 1em;
+      border-left: 4px solid #ffcc00;
+      margin-bottom: 2em;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🔐 Настройка: IPSet Whitelist + IPTables</h1>
+
+  <div class="note">
+    <strong>Цель:</strong> Ограничить доступ к порту SSH (2220) только для определённых IP с использованием IPSet и IPTables, а также обеспечить автозагрузку при старте системы.
+  </div>
+
+  <h2>1. Установка ipset и iptables-persistent</h2>
+  <pre><code>sudo apt update
+sudo apt install ipset iptables-persistent -y</code></pre>
+
+  <h2>2. Создание списка whitelist и добавление IP-адресов</h2>
+  <pre><code>sudo ipset create whitelist hash:ip
+
+# Добавьте доверенные IP
+sudo ipset add whitelist 192.168.1.100
+sudo ipset add whitelist 203.0.113.55
+sudo ipset add whitelist 1.2.3.4
+
+# Проверка:
+sudo ipset list whitelist</code></pre>
+
+  <h2>3. Применение iptables для фильтрации по whitelist</h2>
+  <pre><code>sudo iptables -I INPUT -p tcp --dport 2220 -m set ! --match-set whitelist src -j DROP</code></pre>
+
+  <div class="note">
+    Это правило блокирует все IP, которых <strong>нет</strong> в whitelist, при попытке подключения к порту <strong>2220</strong>.
+  </div>
+
+  <h2>4. Сохранение ipset в конфигурационный файл</h2>
+  <pre><code>sudo ipset save > /etc/ipset.conf</code></pre>
+
+  <h2>5. Настройка автозагрузки через systemd</h2>
+  <p>Создаём systemd unit:</p>
+  <pre><code>sudo nano /etc/systemd/system/ipset-restore.service</code></pre>
+
+  <p>Вставьте следующее содержимое:</p>
+  <pre><code>[Unit]
+Description=Restore ipset rules
+Before=iptables.service
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/ipset restore &lt; /etc/ipset.conf
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target</code></pre>
+
+  <p>Сохраняем и активируем сервис:</p>
+  <pre><code>sudo systemctl daemon-reexec
+sudo systemctl enable ipset-restore</code></pre>
+
+  <h2>6. Сохраняем iptables</h2>
+  <pre><code>sudo netfilter-persistent save</code></pre>
+
+  <h2>7. Перезагрузка и проверка</h2>
+  <pre><code>sudo reboot
+
+# После загрузки:
+sudo ipset list whitelist
+sudo iptables -L -n -v --line-numbers</code></pre>
+
+  <hr>
+  <p><strong>Готово!</strong> Теперь сервер защищён: SSH доступен только с указанных IP, и всё автоматически восстанавливается при старте.</p>
+
+</body>
+</html>
